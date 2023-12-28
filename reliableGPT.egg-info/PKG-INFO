@@ -1,6 +1,10 @@
 Metadata-Version: 2.1
 Name: reliableGPT
-Version: 0.2.7
+<<<<<<< HEAD
+Version: 0.2.9933
+=======
+Version: 0.2.995
+>>>>>>> 2d14e98f98c2099bc6a19d040dc42c427966768d
 Summary: Error handling and auto-retry library for GPT
 Home-page: UNKNOWN
 Author: Ishaan Jaffer

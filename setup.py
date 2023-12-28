@@ -1,16 +1,21 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 
 setup(
     name='reliableGPT',
-    version='0.2.7',
+    version='0.2.995',
     description='Error handling and auto-retry library for GPT',
     author='Ishaan Jaffer',
-    packages=['reliablegpt'],
+    packages=[
+        'reliablegpt'
+    ],
     install_requires=[
         'openai',
         'termcolor',
         'klotty',
         'numpy',
-        'posthog'
+        'posthog',
+        'tiktoken',
+        'resend',
+        'waitress'
     ],
 )

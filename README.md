@@ -1,11 +1,74 @@
-# 💪 reliableGPT: Stop OpenAI Errors in Production 🚀
+# 💪 reliableGPT: Stop failing customer requests for your LLM App 🚀
 
-⚡️ Never worry about overloaded OpenAI servers, rotated keys, or context window limitations again!⚡️
+⚠️ DEPRECATION WARNING: [LiteLLM](https://github.com/BerriAI/litellm) is our new home. Thank you for checking us out! ❤️
 
-reliableGPT handles:
-* OpenAI APIError, OpenAI Timeout, OpenAI Rate Limit Errors, OpenAI Service UnavailableError / Overloaded
-* Context Window Errors
-* Invalid API Key errors 
+# Use LiteLLM to 20x your throughput - load balance between Azure, OpenAI [(litellm router docs)](https://docs.litellm.ai/docs/routing)
+```python
+from litellm import Router
+
+model_list = [{ # list of model deployments 
+    "model_name": "gpt-3.5-turbo", # model alias 
+    "litellm_params": { # params for litellm completion/embedding call 
+        "model": "azure/chatgpt-v-2", # actual model name
+        "api_key": os.getenv("AZURE_API_KEY"),
+        "api_version": os.getenv("AZURE_API_VERSION"),
+        "api_base": os.getenv("AZURE_API_BASE")
+    }
+}, {
+    "model_name": "gpt-3.5-turbo", 
+    "litellm_params": { # params for litellm completion/embedding call 
+        "model": "azure/chatgpt-functioncalling", 
+        "api_key": os.getenv("AZURE_API_KEY"),
+        "api_version": os.getenv("AZURE_API_VERSION"),
+        "api_base": os.getenv("AZURE_API_BASE")
+    }
+}, {
+    "model_name": "gpt-3.5-turbo", 
+    "litellm_params": { # params for litellm completion/embedding call 
+        "model": "gpt-3.5-turbo", 
+        "api_key": os.getenv("OPENAI_API_KEY"),
+    }
+}]
+
+router = Router(model_list=model_list)
+
+# openai.ChatCompletion.create replacement
+response = await router.completion(model="gpt-3.5-turbo", 
+                messages=[{"role": "user", "content": "Hey, how's it going?"}])
+
+print(response)
+```
+
+⚡️ Get 0 dropped requests for your LLM app in production ⚡️
+
+When a request to your llm app fails, reliableGPT handles it by:
+* Retrying with an alternate model - GPT-4, GPT3.5, GPT3.5 16k, text-davinci-003
+* Retrying with a larger context window model for Context Window Errors
+* Sending a Cached Response (using semantic similarity)
+* Retry with a fallback API key for Invalid API Key errors 
+
+## Community 
+* Join us on [Discord](https://discord.gg/WXFfTeEXRh) or Email us at ishaan@berri.ai & krrish@berri.ai
+* **Talk to Founders: Learn more / get help onboarding: [Meeting Scheduling Link](https://calendly.com/d/yr3-9zt-yy4/reliablegpt?month=2023-07)**
+
+
+# Getting Started
+## Step 1. pip install package
+```
+pip install reliableGPT
+```
+## Step 2. The core package is 1 line of code
+Integrating with OpenAI, Azure OpenAI, Langchain, LlamaIndex
+```python
+from reliablegpt import reliableGPT
+openai.ChatCompletion.create = reliableGPT(openai.ChatCompletion.create, user_email='ishaan@berri.ai')
+```
+
+## Troubleshooting
+If you experience failure, try 
+```
+pip install reliableGPT==0.2.976
+```
 
 ## 👉 Code Examples
 * [reliableGPT Getting Started](https://colab.research.google.com/drive/1za1eU6EXLlW4UjHy_YYSc7veDeGTvLON?usp=sharing)
@@ -22,27 +85,127 @@ Using your OpenAI keys across multiple servers - and just got one rotated? You c
 * **Context Window Errors**: 
 For context window errors it automatically retries your request with models with larger context windows
 
-# Getting Started
-## Step 1. pip install package
-```
-pip install reliableGPT
-```
-## Step 2. The core package is 1 line of code
-```python
-from reliablegpt import reliableGPT
-openai.ChatCompletion.create = reliableGPT(openai.ChatCompletion.create, user_email='ishaan@berri.ai')
-```
+* **Caching**
+If model fallback + retries fails - reliableGPT also provides caching (hosted - not in-memory). You can turn this on with `caching=True`. This also works for request timeout / task queue depth issues. This is optional, scroll down to learn more 👇. 
 
-# Advanced Usage 
+## Advanced Usage
 ### Breakdown of params
 Here's everything you can pass to reliableGPT 
 
 | Parameter | Type | Required/Optional | Description |
 | --------- | ---- | ----------------- | ----------- |
 | `openai.ChatCompletion.create`| OpenAI method| Required | This is a method from OpenAI, used for calling the OpenAI chat endpoints|
-| `user_email`| string | Required | Update you on spikes in errors |
-| `fallback_strategy` | List | Optional | You can define a custom fallback strategy of OpenAI models you want to try using. If you want to try one model several times, then just repeat that e.g. ['gpt-4', 'gpt-4', 'gpt-3.5-turbo'] will try gpt-4 twice before trying gpt-3.5-turbo | 
+| `user_email`| string/list | Required | Update you on spikes in errors. You can either set user_email to one email (as user_email = "ishaan@berri.ai") or multiple (as user_email = ["ishaan@berri.ai", "krrish@berri.ai"] if you want to send alerts to multiple emails |
+| `fallback_strategy` | list | Optional | You can define a custom fallback strategy of OpenAI models you want to try using. If you want to try one model several times, then just repeat that e.g. ['gpt-4', 'gpt-4', 'gpt-3.5-turbo'] will try gpt-4 twice before trying gpt-3.5-turbo | 
+| `model_limits_dir`| dict | Optional | Note: Required if using `queue_requests = True`, For models you want to handle rate limits for set model_limits_dir = {"gpt-3.5-turbo": {"max_token_capacity": 1000000, "max_request_capacity": 10000}} You can find your account rate limits here: https://platform.openai.com/account/rate-limits |
 | `user_token`| string | Optional | Pass your user token if you want us to handle OpenAI Invalid Key Errors - we'll rotate through your stored keys (more on this below 👇) till we get one that works|
+| `azure_fallback_strategy`| List[string] | Optional | Pass your backup azure deployment/engine id's. In case your requests start failing we'll switch to one of these (if you also pass in a backup openai key, we'll try the Azure endpoints before the raw OpenAI ones) |
+| `backup_openai_key`| string | Optional | Pass your OpenAI API key if you're using Azure and want to switch to OpenAI in case your requests start failing |
+| `caching` | bool | Optional | Cache your openai responses, Used as backup in case model fallback fails **or** overloaded queue (if you're servers are being overwhelmed with requests, it'll alert you and return cached responses, so that customer requests don't get dropped) | 
+| `max_threads` | int | Optional | Pass this in alongside `caching=True`, for it to handle the overloaded queue scenario |
+
+# 👨‍🔬 Use Cases
+## Use Caching around your Query Endpoint 🔥
+If you're seeing high-traffic and want to make sure all your users get a response, wrap your query endpoint with reliableCache. It monitors for high-thread utilization and responds with cached responses. 
+### Step 1. Import reliableCache
+```python
+from reliablegpt import reliableCache
+```
+### Step 2. Initialize reliableCache 
+```python
+# max_threads: the maximum number of threads you've allocated for flask to run (by default this is 1).
+# query_arg: the variable name you're using to pass the user query to your endpoint (Assuming this is in the params/args)
+# customer_instance_arg: unique identifier for that customer's instance (we'll put all cached responses for that customer within this bucket)
+# user_email: [REQUIRED] your user email - we will alert you when you're seeing high utilization 
+cache = reliableCache(max_threads=20, query_arg="query", customer_instance_arg="instance_id", user_email="krrish@berri.ai")
+```
+
+e.g. The number of threads for this flask app is `50`
+```python
+if __name__ == "__main__":
+  from waitress import serve
+  serve(app, host="0.0.0.0", port=4000, threads=50)
+```
+
+### Step 3. Decorate your endpoint 🚀
+```python
+## Decorate your endpoint with cache.cache_wrapper, this monitors for .. 
+## .. high thread utilization and sends cached responses when that happens
+@app.route("/test_func")
+@cache.cache_wrapper 
+def test_fn():
+  # your endpoint logic 
+```
+
+## Switch between Azure OpenAI and raw OpenAI
+If you're using Azure OpenAI and facing issues like Read/Request Timeouts, Rate limits, etc. you can use reliableGPT 💪 to fall back to the raw OpenAI endpoints if your Azure OpenAI endpoint fails 
+### Step 1. Import reliableGPT 
+```python
+from reliablegpt import reliableGPT
+```
+
+### Step 2. Set your backup openai token + [Optional] Set fallback strategy
+Note: **This is stored locally.** 
+```python
+#Set the backup openai key
+openai.ChatCompletion.create = reliableGPT(
+  openai.ChatCompletion.create,
+  user_email="krrish@berri.ai",
+  backup_openai_key=os.getenv("OPENAI_API_KEY"),
+  fallback_strategy=["gpt-4", "gpt-4-32k"],
+  verbose=True)
+```
+
+### Step 3. Test with a bad Azure Key! 
+```python
+#bad key
+openai.api_key = "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"
+
+for question in list_questions:
+  response = openai.ChatCompletion.create(model="gpt-4", engine="chatgpt-test", messages=[{"role":"user", "content": "Hey! how's it going?"}])
+  print(response)
+```
+
+## Handle overloaded server w/ Caching
+If all else fails, reliableGPT will respond with previously cached responses. We store this in a Supabase table and use cosine similarity for similarity based retrieval. Why not in-memory cache? Because when we autoscale / push new updates to our server, we didn't want the cache to be wiped out. 
+
+### Step 1. Import reliableGPT 
+```python
+from reliablegpt import reliableGPT
+```
+
+### Step 2. Turn on caching
+```python
+#Set the backup openai key
+openai.ChatCompletion.create = reliableGPT(
+  openai.ChatCompletion.create,
+  user_email="krrish@berri.ai",
+  caching=True)
+```
+
+#### Optional: Pass your max threads
+Tell reliableGPT what the maximum number of threads you have, handling your requests for you. 
+e.g. The number of threads for this flask app is `50`
+```python
+if __name__ == "__main__":
+  from waitress import serve
+  serve(app, host="0.0.0.0", port=4000, threads=50)
+```
+
+Tell reliableGPT what the maximum number of threads is - `max_threads=50`
+```python
+#Set the backup openai key
+openai.ChatCompletion.create = reliableGPT(
+  openai.ChatCompletion.create,
+  user_email="krrish@berri.ai",
+  caching=True,
+  max_threads=50)
+```
+
+### Step 3. Test it
+Check out [./reliablegpt/tests/test_Caching](https://github.com/BerriAI/reliableGPT/tree/main/reliablegpt/tests/test_Caching)
+
+We spin up a flask server, and then run a test script to run a set of questions against the flask server. 
 
 ## Handle **rotated keys** 
 ### Step 1. Add your keys 
@@ -72,5 +235,5 @@ delete_keys(user_email = user_email, user_token=token)
 You own your keys, and can delete them whenever you want. 
 
 ## Support 
-Reach out to us on Discord https://discord.com/invite/xqTmjKf9wC or Email us at ishaan@berri.ai & krrish@berri.ai
+Reach out to us on [Discord](https://discord.gg/WXFfTeEXRh) or Email us at ishaan@berri.ai & krrish@berri.ai
 
